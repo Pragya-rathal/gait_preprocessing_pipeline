@@ -10,6 +10,8 @@ class ConfigurableNormalizer:
 
     def build_subject_registry(self, trials: List[Dict[str, Any]]) -> None:
         for t in trials:
+            if t.get("recording_type") == "continuous":
+                continue
             sub = t["subject_id"]
             for muscle, env in t.get("envelopes", {}).items():
                 key = f"{sub}_{muscle}"
