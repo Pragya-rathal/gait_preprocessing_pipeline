@@ -1,88 +1,62 @@
-import matplotlib
-matplotlib.use('Agg')
-import matplotlib.pyplot as plt
-import numpy as np
-import seaborn as sns
 from pathlib import Path
-from typing import Dict
+from typing import Dict, Iterable, List
+from .stats_engine import DescriptiveStatsEngine
+
 
 class VerificationPlotter:
-    def __init__(self, out_root: Path, dpi: int, format_ext: str):
+    def __init__(self, out_root: Path, dpi: int, format_ext: str, notch_freq: float, envelope_cutoff: float):
         self.out_root = Path(out_root)
         self.dpi = dpi
-        self.format_ext = format_ext
+        self.format_ext = "svg"
+        self.notch_freq = notch_freq
+        self.envelope_cutoff = envelope_cutoff
 
-    def generate_trial_diagnostic_plots(self, sub_id: str, act: str, filename: str, m: str, trace: Dict[str, np.ndarray], fs: float) -> None:
-        """Generates raw vs. processed charts on a single plot."""
-        fig_dir = self.out_root / "QC" / sub_id / filename.replace(".c3d", "") / m
+    def generate_trial_diagnostic_plots(self, sub_id: str, act: str, filename: str, m: str, trace: Dict[str, List[float]], fs: float) -> None:
+        fig_dir = self.out_root / "plots" / sub_id / filename.replace(".c3d", "") / m
         fig_dir.mkdir(parents=True, exist_ok=True)
-        
-        # 1. Processing Chain Plot
-        fig, axs = plt.subplots(4, 1, figsize=(10, 8), sharex=True)
-        t = np.arange(len(trace["raw"])) / fs
-        
-        axs[0].plot(t, trace["raw"], color='gray', alpha=0.7)
-        axs[0].set_title(f"{m} - Raw Diagnostic Stream (DC Offset Removed)")
-        
-        axs[1].plot(t, trace["notch"], color='blue', alpha=0.7)
-        axs[1].set_title("Filtered Stream (Bandpass + Notch Applied)")
-        
-        axs[2].plot(t, trace["rectified"], color='orange', alpha=0.5)
-        axs[2].set_title("Full-Wave Rectified Signal")
-        
-        axs[3].plot(t, trace["envelope"], color='red', linewidth=2)
-        axs[3].set_title("Linear Enveloping Profile (6Hz Low-pass Cutoff)")
-        
-        for ax in axs: ax.grid(True, linestyle=':')
-        plt.xlabel("Time (seconds)")
-        plt.tight_layout()
-        plt.savefig(fig_dir / f"filter_comparison.{self.format_ext}", dpi=self.dpi)
-        plt.close()
+        self._write_multiseries_svg(fig_dir / "processing_chain.svg", f"{m} processing chain ({act})", {"raw": trace["raw"], "filtered": trace["filtered"], "rectified": trace["rectified"], f"envelope_{self.envelope_cutoff}Hz": trace["envelope"]})
+        freqs, psd = DescriptiveStatsEngine.compute_spectral_density(trace["raw"][:512], fs)
+        _, psd_f = DescriptiveStatsEngine.compute_spectral_density(trace["filtered"][:512], fs)
+        self._write_xy_svg(fig_dir / "fft_psd.svg", f"FFT/PSD verification; notch={self.notch_freq}Hz", freqs, {"raw_psd": psd, "filtered_psd": psd_f})
+        self._write_histogram_svg(fig_dir / "histogram.svg", f"{m} amplitude histogram", trace["raw"], trace["filtered"])
 
-        # 2. Spectral Verification Plot (FFT & PSD)
-        fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(12, 4))
-        
-        # Before / After FFT
-        f_raw = np.fft.rfftfreq(len(trace["raw"]), 1/fs)
-        fft_raw = np.abs(np.fft.rfft(trace["raw"]))
-        fft_filt = np.abs(np.fft.rfft(trace["notch"]))
-        
-        ax1.plot(f_raw, fft_raw, label="Raw", color='gray', alpha=0.5)
-        ax1.plot(f_raw, fft_filt, label="Filtered", color='green', alpha=0.8)
-        ax1.set_xlim(0, 500)
-        ax1.set_title("Fast Fourier Transform Frequency Analysis")
-        ax1.set_xlabel("Frequency (Hz)")
-        ax1.legend()
-        ax1.grid(True)
-        
-        # Verification Check Marker for 50Hz Noise Removal
-        ax1.axvline(50, color='red', linestyle='--', alpha=0.4, label="50Hz Main Rail")
+    def generate_population_distributions(self, rows: List[Dict[str, object]]) -> None:
+        out = self.out_root / "plots" / "normalization_comparison.svg"
+        out.parent.mkdir(parents=True, exist_ok=True)
+        values = [float(r.get("Value", 0.0)) for r in rows if r.get("Metric") == "rms"]
+        self._write_multiseries_svg(out, "Normalization RMS comparison", {"rms": values[:500]})
 
-        # Probability Distribution (Histogram)
-        sns.histplot(trace["raw"], kde=True, color="gray", ax=ax2, label="Raw", stat="density", alpha=0.3)
-        sns.histplot(trace["notch"], kde=True, color="green", ax=ax2, label="Filtered", stat="density", alpha=0.3)
-        ax2.set_title("Amplitude Distribution Curve Change")
-        ax2.legend()
-        
-        plt.tight_layout()
-        plt.savefig(fig_dir / f"spectral_identity.{self.format_ext}", dpi=self.dpi)
-        plt.close()
+    def _write_multiseries_svg(self, path: Path, title: str, series: Dict[str, Iterable[float]]) -> None:
+        width, height = 900, 420
+        all_values = [float(x) for vals in series.values() for x in list(vals)[:1000]] or [0.0]
+        ymin, ymax = min(all_values), max(all_values)
+        span = ymax - ymin or 1.0
+        colors = ["#555", "#1f77b4", "#ff7f0e", "#d62728", "#2ca02c"]
+        parts = [f'<svg xmlns="http://www.w3.org/2000/svg" width="{width}" height="{height}"><title>{title}</title><rect width="100%" height="100%" fill="white"/><text x="20" y="25" font-size="18">{title}</text>']
+        for si, (name, vals) in enumerate(series.items()):
+            vals = [float(x) for x in list(vals)[:1000]]
+            if len(vals) < 2:
+                continue
+            pts = []
+            for i, v in enumerate(vals):
+                x = 40 + i * (width - 70) / (len(vals) - 1)
+                y = height - 35 - ((v - ymin) / span) * (height - 75)
+                pts.append(f"{x:.1f},{y:.1f}")
+            parts.append(f'<polyline points="{" ".join(pts)}" fill="none" stroke="{colors[si % len(colors)]}" stroke-width="1"/><text x="{width-180}" y="{45+20*si}" fill="{colors[si % len(colors)]}">{name}</text>')
+        parts.append('</svg>')
+        path.write_text("".join(parts), encoding="utf-8")
 
-    def generate_population_distributions(self, summary_df, before_col: str, after_col: str, title: str) -> None:
-        """Generates violin and box plots to check normalization behavior across subjects."""
-        pop_dir = self.out_root / "QC" / "Population_Profiles"
-        pop_dir.mkdir(parents=True, exist_ok=True)
-        
-        fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(14, 6))
-        
-        sns.violinplot(data=summary_df, x="Muscle", y=before_col, hue="Subject", ax=ax1)
-        ax1.set_title(f"{title} - Raw Inter-Subject Variances")
-        ax1.tick_params(axis='x', rotation=45)
-        
-        sns.violinplot(data=summary_df, x="Muscle", y=after_col, hue="Subject", ax=ax2)
-        ax2.set_title(f"{title} - Post-Normalization Alignment")
-        ax2.tick_params(axis='x', rotation=45)
-        
-        plt.tight_layout()
-        plt.savefig(pop_dir / f"normalization_verification_profile.{self.format_ext}", dpi=self.dpi)
-        plt.close()
+    def _write_xy_svg(self, path: Path, title: str, xvals: List[float], series: Dict[str, List[float]]) -> None:
+        self._write_multiseries_svg(path, title, series)
+
+    def _write_histogram_svg(self, path: Path, title: str, raw: List[float], filtered: List[float]) -> None:
+        def bins(vals: List[float]) -> List[float]:
+            vals = vals[:5000]
+            if not vals:
+                return []
+            lo, hi = min(vals), max(vals); span = hi - lo or 1.0
+            counts = [0.0] * 40
+            for v in vals:
+                counts[min(39, int((v - lo) / span * 39))] += 1
+            return counts
+        self._write_multiseries_svg(path, title, {"raw_histogram": bins(raw), "filtered_histogram": bins(filtered)})

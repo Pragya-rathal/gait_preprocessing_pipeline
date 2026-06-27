@@ -1,0 +1,6 @@
+__pycache__/
+*.py[cod]
+processed_dataset/
+c3d_raw/
+.env
+.venv/

@@ -1,7 +1,9 @@
-# Biomechanics Research Preprocessing Configuration
 data:
   raw_dir: "./c3d_raw"
-  output_dir: "./processed_emg_dataset"
+  output_dir: "./processed_dataset"
+  allow_synthetic_when_empty: true
+  include_static_calibrations: false
+  synthetic_duration_s: 6.0
   target_muscles:
     - "L_BF"
     - "R_BF"
@@ -19,22 +21,24 @@ data:
 signal_processing:
   emg_fs: 2000.0
   mocap_fs: 100.0
-  bandpass_low: 20.0     # ISEK guideline: removes motion/ECG artifacts
-  bandpass_high: 450.0   # Captures up to the physical firing frequency limits
-  notch_freq: 50.0       # Direct powerline interference elimination
+  bandpass_low: 20.0
+  bandpass_high: 450.0
+  notch_freq: 60.0
   notch_q: 30.0
-  envelope_cutoff: 6.0   # Low-pass filter cutoff for linear envelope tracking
-  filter_order: 4        # Dual-pass (zero-phase) yields an effective 8th order filter
+  envelope_cutoff: 6.0
+  filter_order: 4
 
 qc_thresholds:
-  dead_channel_ptp_v: 1e-5        # Less than 10 microvolts is considered dead/flat line
-  saturation_v: 0.0098            # Amplifier ceiling/rail maximum limit
-  saturation_allowed_pct: 0.01    # Drop trial if more than 1% of samples are clipped
-  max_baseline_drift_v: 0.001     # Maximum allowed variance in step means
-  outlier_z_score: 3.0            # Statistical window filter boundary
+  dead_channel_ptp_v: 1e-5
+  saturation_v: 0.0098
+  saturation_allowed_pct: 0.01
+  max_baseline_drift_v: 0.001
+  abnormal_rms_max_v: 0.05
+  sync_tolerance_s: 0.05
+  export_failed_windows: false
 
 normalization:
-  strategy: "subject_maximum"     # Supported strategies: mvc, subject_maximum, percentile, per_trial
+  strategy: "subject_maximum"
   percentile_value: 99.9
   mvc_dir: "./mvc_ref"
 
@@ -42,8 +46,16 @@ windowing:
   length_ms: 200
   stride_ms: 50
   anticipatory_horizon_ms: 300
+  transition_margin_ms: 500
+
+labels:
+  isolated_activities: ["walk", "sit", "squat", "stair"]
+  continuous_activities: ["all", "walk+squat+stair"]
+  transition_recordings:
+    all: ["walk", "sit", "squat", "stair"]
+    walk+squat+stair: ["walk", "squat", "stair"]
 
 plots:
   generate_all: true
   dpi: 150
-  format: "png"
+  format: "svg"
