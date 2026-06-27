@@ -25,7 +25,7 @@ def execute_verification_pipeline(config_path: str = "config.yaml") -> Dict[str,
     reporter = DatasetReportWriter(out_dir)
     logger.info("Launching EMG preprocessing and dataset generation pipeline")
 
-    loader = C3DValidationLoader(cfg["data"]["raw_dir"], cfg["data"]["target_muscles"], cfg["data"]["ignored_patterns"], cfg["data"].get("allow_synthetic_when_empty", True), cfg["data"].get("synthetic_duration_s", 6.0), cfg["signal_processing"]["emg_fs"])
+    loader = C3DValidationLoader(cfg["data"]["raw_dir"], cfg["data"]["target_muscles"], cfg["data"]["ignored_patterns"], cfg["data"].get("allow_synthetic_when_empty", True), cfg["data"].get("synthetic_duration_s", 6.0), cfg["signal_processing"]["emg_fs"], cfg["data"].get("include_static_calibrations", False))
     auditor = SignalQualityAuditor(cfg["qc_thresholds"]["dead_channel_ptp_v"], cfg["qc_thresholds"]["saturation_v"], cfg["qc_thresholds"]["saturation_allowed_pct"], cfg["qc_thresholds"]["max_baseline_drift_v"], cfg["qc_thresholds"].get("abnormal_rms_max_v", 0.05), cfg["qc_thresholds"].get("sync_tolerance_s", 0.05))
     normalizer = ConfigurableNormalizer(cfg["normalization"]["strategy"], cfg["normalization"]["percentile_value"])
     plotter = VerificationPlotter(out_dir, cfg["plots"]["dpi"], cfg["plots"].get("format", "svg"), cfg["signal_processing"]["notch_freq"], cfg["signal_processing"]["envelope_cutoff"])
@@ -36,7 +36,11 @@ def execute_verification_pipeline(config_path: str = "config.yaml") -> Dict[str,
     qc_rows: List[Dict[str, Any]] = []
 
     files = loader.discover_files()
-    logger.info("Located %s C3D-compatible recording(s)", len(files))
+    logger.info("Located %s processable C3D recording(s)", len(files))
+    if loader.static_skipped_count:
+        logger.info("Skipped %s static calibration recording(s) directly under subject folders", loader.static_skipped_count)
+    if loader.static_included_count:
+        logger.info("Included %s static calibration recording(s) because include_static_calibrations is enabled", loader.static_included_count)
     for path in files:
         meta = loader.parse_path_topology(path)
         trial = loader.extract_synchronized_streams(meta)

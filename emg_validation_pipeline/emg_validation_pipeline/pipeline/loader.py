@@ -11,20 +11,48 @@ except ImportError:  # pragma: no cover
 class C3DValidationLoader:
     VALID_ACTIVITIES = {"walk", "sit", "squat", "stair", "all", "walk+squat+stair"}
     CONTINUOUS_ACTIVITIES = {"all", "walk+squat+stair"}
+    STATIC_ACTIVITY = "static_calibration"
 
-    def __init__(self, root_dir: Path | str, target_muscles: List[str], ignored_patterns: List[str], allow_synthetic: bool = True, synthetic_duration_s: float = 6.0, fs: float = 2000.0):
+    def __init__(self, root_dir: Path | str, target_muscles: List[str], ignored_patterns: List[str], allow_synthetic: bool = True, synthetic_duration_s: float = 6.0, fs: float = 2000.0, include_static_calibrations: bool = False):
         self.root_dir = Path(root_dir)
         self.target_muscles = [m.upper() for m in target_muscles]
         self.ignored_patterns = [p.upper() for p in ignored_patterns]
         self.allow_synthetic = allow_synthetic
         self.synthetic_duration_s = float(synthetic_duration_s)
         self.fs = float(fs)
+        self.include_static_calibrations = include_static_calibrations
+        self.static_skipped_count = 0
+        self.static_included_count = 0
+        self.static_recordings: List[Path] = []
 
     def discover_files(self) -> List[Path]:
         files = sorted(self.root_dir.rglob("*.c3d")) if self.root_dir.exists() else []
-        if files or not self.allow_synthetic:
-            return files
+        if files:
+            processing_files: List[Path] = []
+            self.static_recordings = []
+            self.static_skipped_count = 0
+            self.static_included_count = 0
+            for path in files:
+                if self.is_static_calibration(path):
+                    self.static_recordings.append(path)
+                    if self.include_static_calibrations:
+                        self.static_included_count += 1
+                        processing_files.append(path)
+                    else:
+                        self.static_skipped_count += 1
+                else:
+                    processing_files.append(path)
+            return processing_files
+        if not self.allow_synthetic:
+            return []
         return [Path(f"SYNTHETIC_SUBJECT/{a}/synthetic_{a}.c3d") for a in ["walk", "sit", "squat", "stair", "all"]]
+
+    def is_static_calibration(self, path: Path) -> bool:
+        try:
+            parts = path.relative_to(self.root_dir).parts
+        except ValueError:
+            parts = path.parts
+        return len(parts) == 2 and Path(parts[-1]).suffix.lower() == ".c3d"
 
     def parse_path_topology(self, path: Path) -> Dict[str, Any]:
         try:
@@ -32,11 +60,31 @@ class C3DValidationLoader:
             parts = rel.parts
         except ValueError:
             parts = path.parts
+        if len(parts) == 2:
+            return {
+                "subject_id": parts[0],
+                "activity": self.STATIC_ACTIVITY,
+                "recording": Path(path).stem,
+                "filename": Path(path).name,
+                "recording_type": "static_calibration",
+                "absolute_path": path,
+                "synthetic": not Path(path).exists(),
+                "is_static_calibration": True,
+            }
         if len(parts) < 3:
-            raise ValueError(f"Path format deviation detected. Expected Subject/activity/file.c3d: {path}")
+            return {
+                "subject_id": parts[0] if parts else "UNKNOWN_SUBJECT",
+                "activity": self.STATIC_ACTIVITY,
+                "recording": Path(path).stem,
+                "filename": Path(path).name,
+                "recording_type": "static_calibration",
+                "absolute_path": path,
+                "synthetic": not Path(path).exists(),
+                "is_static_calibration": True,
+            }
         activity = parts[-2].lower()
         if activity not in self.VALID_ACTIVITIES:
-            raise ValueError(f"Unsupported activity folder '{activity}' in {path}. Expected one of {sorted(self.VALID_ACTIVITIES)}")
+            raise ValueError(f"Unsupported activity folder '{activity}' in {path}. Expected one of {sorted(self.VALID_ACTIVITIES)} or a static calibration C3D directly under a subject directory.")
         return {
             "subject_id": parts[-3],
             "activity": activity,
@@ -45,6 +93,7 @@ class C3DValidationLoader:
             "recording_type": "continuous" if activity in self.CONTINUOUS_ACTIVITIES else "isolated",
             "absolute_path": path,
             "synthetic": not Path(path).exists(),
+            "is_static_calibration": False,
         }
 
     def extract_synchronized_streams(self, meta: Dict[str, Any]) -> Dict[str, Any]:

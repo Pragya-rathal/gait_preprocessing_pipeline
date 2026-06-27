@@ -2,6 +2,7 @@ data:
   raw_dir: "./c3d_raw"
   output_dir: "./processed_dataset"
   allow_synthetic_when_empty: true
+  include_static_calibrations: false
   synthetic_duration_s: 6.0
   target_muscles:
     - "L_BF"

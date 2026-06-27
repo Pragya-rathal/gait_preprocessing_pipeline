@@ -51,16 +51,8 @@ class ScientificEMGConditioner:
             return values[:]
         sin_basis = [math.sin(2.0 * math.pi * freq * i / self.fs) for i in range(len(values))]
         cos_basis = [math.cos(2.0 * math.pi * freq * i / self.fs) for i in range(len(values))]
-        dot_ss = sum(s * s for s in sin_basis)
-        dot_cc = sum(c * c for c in cos_basis)
-        dot_sc = sum(s * c for s, c in zip(sin_basis, cos_basis))
-        dot_ys = sum(v * s for v, s in zip(values, sin_basis))
-        dot_yc = sum(v * c for v, c in zip(values, cos_basis))
-        det = dot_ss * dot_cc - dot_sc * dot_sc
-        if abs(det) > 1e-12:
-            coef_s = (dot_ys * dot_cc - dot_yc * dot_sc) / det
-            coef_c = (dot_yc * dot_ss - dot_ys * dot_sc) / det
-        else:
-            coef_s = dot_ys / (dot_ss or 1.0)
-            coef_c = dot_yc / (dot_cc or 1.0)
+        denom_s = sum(x * x for x in sin_basis) or 1.0
+        denom_c = sum(x * x for x in cos_basis) or 1.0
+        coef_s = sum(v * b for v, b in zip(values, sin_basis)) / denom_s
+        coef_c = sum(v * b for v, b in zip(values, cos_basis)) / denom_c
         return [v - coef_s * s - coef_c * c for v, s, c in zip(values, sin_basis, cos_basis)]
