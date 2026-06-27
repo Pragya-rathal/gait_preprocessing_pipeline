@@ -1,0 +1,49 @@
+# Biomechanics Research Preprocessing Configuration
+data:
+  raw_dir: "./c3d_raw"
+  output_dir: "./processed_emg_dataset"
+  target_muscles:
+    - "L_BF"
+    - "R_BF"
+    - "L_RF"
+    - "R_RF"
+    - "L_VL"
+    - "R_VL"
+    - "L_TA"
+    - "R_TA"
+    - "L_GasM"
+    - "R_GasM"
+    - "R_ES"
+  ignored_patterns: ["NA1", "NA2", "NA3", "NA4", "DELTOIDEUS", "BICEPS", "TRICEPS"]
+
+signal_processing:
+  emg_fs: 2000.0
+  mocap_fs: 100.0
+  bandpass_low: 20.0     # ISEK guideline: removes motion/ECG artifacts
+  bandpass_high: 450.0   # Captures up to the physical firing frequency limits
+  notch_freq: 50.0       # Direct powerline interference elimination
+  notch_q: 30.0
+  envelope_cutoff: 6.0   # Low-pass filter cutoff for linear envelope tracking
+  filter_order: 4        # Dual-pass (zero-phase) yields an effective 8th order filter
+
+qc_thresholds:
+  dead_channel_ptp_v: 1e-5        # Less than 10 microvolts is considered dead/flat line
+  saturation_v: 0.0098            # Amplifier ceiling/rail maximum limit
+  saturation_allowed_pct: 0.01    # Drop trial if more than 1% of samples are clipped
+  max_baseline_drift_v: 0.001     # Maximum allowed variance in step means
+  outlier_z_score: 3.0            # Statistical window filter boundary
+
+normalization:
+  strategy: "subject_maximum"     # Supported strategies: mvc, subject_maximum, percentile, per_trial
+  percentile_value: 99.9
+  mvc_dir: "./mvc_ref"
+
+windowing:
+  length_ms: 200
+  stride_ms: 50
+  anticipatory_horizon_ms: 300
+
+plots:
+  generate_all: true
+  dpi: 150
+  format: "png"
