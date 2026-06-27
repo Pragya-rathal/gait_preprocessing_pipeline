@@ -1,0 +1,9 @@
+# Optional scientific stack for real C3D deployments. The pipeline has stdlib fallbacks
+# for smoke tests and synthetic-demo execution, but real C3D ingestion requires ezc3d.
+numpy>=1.26
+pandas>=2.0
+scipy>=1.11
+matplotlib>=3.8
+seaborn>=0.13
+PyYAML>=6.0
+ezc3d>=1.5
