@@ -26,12 +26,11 @@ class DescriptiveStatsEngine:
         }
 
     @staticmethod
+    @staticmethod
     def percentile(values: Iterable[float], pct: float) -> float:
-        ordered = list(values)
+        ordered = sorted(values)
         if not ordered:
             return 0.0
-        if ordered != sorted(ordered):
-            ordered = sorted(ordered)
         k = (len(ordered) - 1) * pct / 100.0
         lo = math.floor(k)
         hi = math.ceil(k)
